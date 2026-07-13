@@ -7,11 +7,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.io.File
-import androidx.compose.runtime.remember
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -19,9 +15,12 @@ fun App() {
     var tracks by remember { mutableStateOf(emptyList<Track>()) }
     val player = remember { AudioPlayer() }
     var currentTrack by remember { mutableStateOf<String?>(null) }
+    var isPaused by remember { mutableStateOf(false) }
+    var volume by remember { mutableFloatStateOf(0.8f) }
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
+            // Кнопки сканирования и остановки
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     val folder = java.io.File("D:\\Загрузки")
@@ -32,39 +31,73 @@ fun App() {
                 Button(onClick = {
                     player.stop()
                     currentTrack = null
+                    isPaused = false
                 }, modifier = Modifier.weight(1f)) {
                     Text("Стоп")
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Ползунок громкости
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Громкость", modifier = Modifier.padding(end = 8.dp))
+                Slider(
+                    value = volume,
+                    onValueChange = {
+                        volume = it
+                        player.setVolume(it)
+                    },
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(Modifier.height(16.dp))
 
             LazyColumn {
                 items(tracks) { track ->
-                    val isPlaying = currentTrack == track.filePath
+                    val isCurrent = currentTrack == track.filePath
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
                             .clickable {
-                                if (isPlaying) {
-                                    player.stop()
-                                    currentTrack = null
+                                if (isCurrent) {
+                                    if (isPaused) {
+                                        player.resume()
+                                        isPaused = false
+                                    } else {
+                                        player.pause()
+                                        isPaused = true
+                                    }
                                 } else {
+                                    player.stop()
                                     player.play(track.filePath)
                                     currentTrack = track.filePath
+                                    isPaused = false
                                 }
                             },
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isPlaying)
+                            containerColor = if (isCurrent)
                                 MaterialTheme.colorScheme.primaryContainer
                             else
                                 MaterialTheme.colorScheme.surface
                         )
                     ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text(track.title, style = MaterialTheme.typography.titleMedium)
-                            Text(track.artist, style = MaterialTheme.typography.bodySmall)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(track.title, style = MaterialTheme.typography.titleMedium)
+                                Text(track.artist, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (isCurrent) {
+                                Text(
+                                    text = if (isPaused) "⏸" else "▶",
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                            }
                         }
                     }
                 }

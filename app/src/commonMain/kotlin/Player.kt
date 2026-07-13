@@ -4,4 +4,5 @@ expect class AudioPlayer {
     fun resume()
     fun stop()
     fun isPlaying(): Boolean
+    fun setVolume(volume: Float)
 }
