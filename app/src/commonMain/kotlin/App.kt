@@ -23,7 +23,7 @@ fun App() {
             // Кнопки сканирования и остановки
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
-                    val folder = java.io.File("D:\\Загрузки")
+                    val folder = java.io.File("D:\\Раб.стол\\tracks")
                     tracks = scanMusicFolder(folder.absolutePath)
                 }, modifier = Modifier.weight(1f)) {
                     Text("Сканировать")
