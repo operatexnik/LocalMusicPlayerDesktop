@@ -37,6 +37,9 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("com.googlecode.soundlibs:jlayer:1.0.1-1")
+                // добавляем это:
+                implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
+                implementation("com.googlecode.soundlibs:tritonus-share:0.3.7.4")
             }
         }
     }
