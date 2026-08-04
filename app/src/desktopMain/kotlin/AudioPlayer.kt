@@ -1,9 +1,8 @@
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import javax.sound.sampled.*
-import kotlin.math.ln
-import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.roundToInt
 
 actual class AudioPlayer {
 
@@ -15,12 +14,10 @@ actual class AudioPlayer {
     private val paused = AtomicBoolean(false)
     private val stopRequested = AtomicBoolean(false)
 
-    private var volume: Float = 0.8f
-    private var currentFilePath: String? = null
+    // Громкость храним атомарно, чтобы поток воспроизведения всегда видел актуальное значение
+    private val volume = AtomicReference(0.8f)
 
-    // для будущего seek / прогресса
-    private var bytesPerSecond: Float = 0f
-    private var totalBytesRead: Long = 0
+    private var currentFilePath: String? = null
 
     actual fun play(filePath: String) {
         stop()
@@ -31,15 +28,13 @@ actual class AudioPlayer {
     actual fun pause() {
         if (playing.get() && !paused.get()) {
             paused.set(true)
-            line?.stop()          // останавливаем вывод звука
+            // Не вызываем line.stop() — это и даёт щелчок
         }
     }
 
     actual fun resume() {
         if (playing.get() && paused.get()) {
             paused.set(false)
-            line?.start()         // продолжаем с того же места
-            // будим поток, если он ждал
             synchronized(this) {
                 (this as Object).notifyAll()
             }
@@ -65,33 +60,14 @@ actual class AudioPlayer {
         playThread = null
         line = null
         audioStream = null
-        totalBytesRead = 0
         currentFilePath = null
     }
 
     actual fun isPlaying(): Boolean = playing.get() && !paused.get()
 
     actual fun setVolume(volume: Float) {
-        this.volume = volume.coerceIn(0f, 1f)
-        applyVolume()
-    }
-
-    private fun applyVolume() {
-        val sourceLine = line ?: return
-        try {
-            if (sourceLine.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-                val gainControl = sourceLine.getControl(FloatControl.Type.MASTER_GAIN) as FloatControl
-                val gainDb = if (volume <= 0.0001f) {
-                    gainControl.minimum
-                } else {
-                    val db = (20.0 * ln(volume.toDouble()) / ln(10.0)).toFloat()
-                    max(gainControl.minimum, min(gainControl.maximum, db))
-                }
-                gainControl.value = gainDb
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        this.volume.set(volume.coerceIn(0f, 1f))
+        // Громкость применяется мгновенно в цикле записи — ничего больше делать не нужно
     }
 
     private fun startPlayback() {
@@ -102,14 +78,11 @@ actual class AudioPlayer {
         stopRequested.set(false)
         paused.set(false)
         playing.set(true)
-        totalBytesRead = 0
 
         playThread = Thread {
             try {
-                // 1. Открываем файл (mp3spi подхватывает MP3)
                 var stream = AudioSystem.getAudioInputStream(file)
 
-                // 2. Конвертируем в PCM, который понимает SourceDataLine
                 val baseFormat = stream.format
                 val decodedFormat = AudioFormat(
                     AudioFormat.Encoding.PCM_SIGNED,
@@ -123,26 +96,22 @@ actual class AudioPlayer {
                 stream = AudioSystem.getAudioInputStream(decodedFormat, stream)
                 audioStream = stream
 
-                // 3. Открываем линию
                 val info = DataLine.Info(SourceDataLine::class.java, decodedFormat)
                 val sourceLine = AudioSystem.getLine(info) as SourceDataLine
-                sourceLine.open(decodedFormat)
+                // Чуть меньший буфер = меньше задержка, но стабильность обычно нормальная
+                sourceLine.open(decodedFormat, 4096 * 4)
                 line = sourceLine
-
-                bytesPerSecond = decodedFormat.sampleRate * decodedFormat.frameSize
-
-                applyVolume()
                 sourceLine.start()
 
                 val buffer = ByteArray(4096)
 
                 while (!stopRequested.get()) {
-                    // Если на паузе — ждём
+                    // Пауза без stop()/start() линии — нет щелчка
                     if (paused.get()) {
                         synchronized(this) {
                             while (paused.get() && !stopRequested.get()) {
                                 try {
-                                    (this as Object).wait(200)
+                                    (this as Object).wait(50)
                                 } catch (_: InterruptedException) {
                                     break
                                 }
@@ -152,21 +121,20 @@ actual class AudioPlayer {
                     }
 
                     val bytesRead = stream.read(buffer, 0, buffer.size)
-                    if (bytesRead == -1) break   // конец файла
+                    if (bytesRead == -1) break
 
-                    totalBytesRead += bytesRead
+                    // === Программная громкость ===
+                    applySoftwareVolume(buffer, bytesRead, volume.get())
+
                     sourceLine.write(buffer, 0, bytesRead)
                 }
 
-                // Доигрываем буфер
                 if (!stopRequested.get()) {
                     sourceLine.drain()
                 }
 
             } catch (e: Exception) {
-                if (!stopRequested.get()) {
-                    e.printStackTrace()
-                }
+                if (!stopRequested.get()) e.printStackTrace()
             } finally {
                 playing.set(false)
                 paused.set(false)
@@ -181,6 +149,32 @@ actual class AudioPlayer {
         }.also {
             it.isDaemon = true
             it.start()
+        }
+    }
+
+    /**
+     * Умножает 16-bit PCM сэмплы на коэффициент громкости.
+     * Работает мгновенно и без щелчков.
+     */
+    private fun applySoftwareVolume(buffer: ByteArray, len: Int, vol: Float) {
+        if (vol >= 0.999f) return          // почти максимум — ничего не трогаем
+        if (vol <= 0.001f) {               // тишина
+            buffer.fill(0, 0, len)
+            return
+        }
+
+        var i = 0
+        while (i < len - 1) {
+            // little-endian 16-bit
+            var sample = (buffer[i].toInt() and 0xFF) or (buffer[i + 1].toInt() shl 8)
+            // приводим к signed
+            if (sample >= 32768) sample -= 65536
+
+            sample = (sample * vol).roundToInt().coerceIn(-32768, 32767)
+
+            buffer[i] = sample.toByte()
+            buffer[i + 1] = (sample shr 8).toByte()
+            i += 2
         }
     }
 }
