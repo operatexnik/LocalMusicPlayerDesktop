@@ -8,6 +8,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.io.File
+import java.util.prefs.Preferences
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -15,18 +16,50 @@ import kotlinx.coroutines.launch
 @Composable
 fun App() {
     val scope = rememberCoroutineScope()
+    val prefs = remember { Preferences.userRoot().node("MusicPlayerDesktop") }
 
     var tracks by remember { mutableStateOf(emptyList<Track>()) }
     val player = remember { AudioPlayer() }
     var currentTrack by remember { mutableStateOf<Track?>(null) }
     var isPaused by remember { mutableStateOf(false) }
-    var volume by remember { mutableFloatStateOf(0.8f) }
+
+    var volume by remember {
+        mutableFloatStateOf(prefs.getFloat("volume", 0.8f))
+    }
+
+    LaunchedEffect(Unit) {
+        player.setVolume(volume)
+    }
+
 
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     var isSeeking by remember { mutableStateOf(false) }
 
-    // Обновление позиции
+    // Автоскип
+    LaunchedEffect(Unit) {
+        player.setOnFinished {
+            scope.launch {
+                val list = tracks
+                val current = currentTrack
+                val idx = list.indexOfFirst { it.filePath == current?.filePath }
+
+                if (idx >= 0 && idx < list.lastIndex) {
+                    val next = list[idx + 1]
+                    player.play(next.filePath)
+                    player.setVolume(volume)
+                    currentTrack = next
+                    isPaused = false
+                    position = 0
+                } else {
+                    currentTrack = null
+                    isPaused = false
+                }
+            }
+        }
+    }
+
+    // Позиция
     LaunchedEffect(currentTrack) {
         while (currentTrack != null) {
             if (!isSeeking) {
@@ -47,7 +80,6 @@ fun App() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Кнопка сканирования
             Button(
                 onClick = {
                     val folder = File("D:\\Раб.стол\\tracks")
@@ -60,7 +92,6 @@ fun App() {
 
             Spacer(Modifier.height(12.dp))
 
-            // Название текущего трека
             Text(
                 text = currentTrack?.let { "${it.artist} — ${it.title}" } ?: "Ничего не играет",
                 style = MaterialTheme.typography.titleMedium
@@ -68,7 +99,6 @@ fun App() {
 
             Spacer(Modifier.height(8.dp))
 
-            // Таймлайн
             Column {
                 Slider(
                     value = if (duration > 0) {
@@ -82,7 +112,7 @@ fun App() {
                         isSeeking = true
                         player.seek(position)
                         scope.launch {
-                            delay(100)          // совсем чуть-чуть
+                            delay(100)
                             isSeeking = false
                         }
                     },
@@ -100,7 +130,6 @@ fun App() {
 
             Spacer(Modifier.height(8.dp))
 
-            // Громкость
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Громкость", modifier = Modifier.padding(end = 8.dp))
                 Slider(
@@ -108,6 +137,7 @@ fun App() {
                     onValueChange = {
                         volume = it
                         player.setVolume(it)
+                        prefs.putFloat("volume", it)
                     },
                     modifier = Modifier.weight(1f)
                 )
@@ -115,7 +145,6 @@ fun App() {
 
             Spacer(Modifier.height(16.dp))
 
-            // Список треков
             LazyColumn {
                 items(tracks) { track ->
                     val isCurrent = currentTrack?.filePath == track.filePath
@@ -155,16 +184,9 @@ fun App() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(
-                                    text = track.title,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = track.artist,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                Text(track.title, style = MaterialTheme.typography.titleMedium)
+                                Text(track.artist, style = MaterialTheme.typography.bodySmall)
                             }
-
                             if (isCurrent) {
                                 Text(
                                     text = if (isPaused) "⏸" else "▶",
@@ -190,7 +212,6 @@ private fun formatTime(ms: Long): String {
 fun scanMusicFolder(path: String): List<Track> {
     val folder = File(path)
     if (!folder.exists()) return emptyList()
-
     return folder.listFiles()
         ?.filter { it.extension.lowercase() in listOf("mp3", "wav", "flac") }
         ?.map {

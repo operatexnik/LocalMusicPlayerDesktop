@@ -7,12 +7,13 @@ import java.awt.*
 import java.awt.image.BufferedImage
 import javax.swing.SwingUtilities
 
+private const val APP_NAME = "Мой Плеер"   // ← своё название
+
 fun main() = application {
     val windowState = rememberWindowState(width = 480.dp, height = 700.dp)
     var isVisible by remember { mutableStateOf(true) }
     var isAppRunning by remember { mutableStateOf(true) }
 
-    // Создаём иконку в трее один раз
     val trayIcon = remember {
         createTrayIcon(
             onShow = { isVisible = true },
@@ -23,7 +24,6 @@ fun main() = application {
         )
     }
 
-    // Добавляем / убираем иконку из трея
     DisposableEffect(Unit) {
         if (SystemTray.isSupported()) {
             try {
@@ -43,12 +43,9 @@ fun main() = application {
 
     if (isAppRunning) {
         Window(
-            onCloseRequest = {
-                // Вместо выхода — просто прячем окно
-                isVisible = false
-            },
+            onCloseRequest = { isVisible = false },
             visible = isVisible,
-            title = "Music Player",
+            title = APP_NAME,
             state = windowState
         ) {
             App()
@@ -56,46 +53,33 @@ fun main() = application {
     }
 }
 
-/**
- * Создаёт иконку в системном трее
- */
 private fun createTrayIcon(
     onShow: () -> Unit,
     onExit: () -> Unit
 ): TrayIcon {
-    // Простая иконка (можно потом заменить на свою)
     val image = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
     val g = image.createGraphics()
-    g.color = Color(30, 144, 255) // синий кружок
+    g.color = Color(30, 144, 255)
     g.fillOval(0, 0, 16, 16)
     g.dispose()
 
-    val trayIcon = TrayIcon(image, "Music Player")
+    val trayIcon = TrayIcon(image, APP_NAME)
     trayIcon.isImageAutoSize = true
 
-    // Меню по правому клику
     val popup = PopupMenu()
 
     val showItem = MenuItem("Открыть")
-    showItem.addActionListener {
-        SwingUtilities.invokeLater { onShow() }
-    }
+    showItem.addActionListener { SwingUtilities.invokeLater { onShow() } }
 
     val exitItem = MenuItem("Выход")
-    exitItem.addActionListener {
-        SwingUtilities.invokeLater { onExit() }
-    }
+    exitItem.addActionListener { SwingUtilities.invokeLater { onExit() } }
 
     popup.add(showItem)
     popup.addSeparator()
     popup.add(exitItem)
 
     trayIcon.popupMenu = popup
-
-    // Двойной клик / одинарный клик по иконке — показать окно
-    trayIcon.addActionListener {
-        SwingUtilities.invokeLater { onShow() }
-    }
+    trayIcon.addActionListener { SwingUtilities.invokeLater { onShow() } }
 
     return trayIcon
 }

@@ -17,11 +17,10 @@ actual class AudioPlayer {
     private val currentPositionMs = AtomicLong(0)
     private val durationMs = AtomicLong(0)
 
-    private var currentFilePath: String? = null
+    private var onFinished: (() -> Unit)? = null
 
     actual fun play(filePath: String) {
         stop()
-        currentFilePath = filePath
 
         val player = factory.mediaPlayers().newMediaPlayer()
         mediaPlayer = player
@@ -30,6 +29,8 @@ actual class AudioPlayer {
             override fun playing(mediaPlayer: MediaPlayer) {
                 playing.set(true)
                 paused.set(false)
+                // VLC иногда сбрасывает громкость при старте — ставим снова
+                mediaPlayer.audio().setVolume((volume.get() * 100).toInt().coerceIn(0, 100))
             }
 
             override fun paused(mediaPlayer: MediaPlayer) {
@@ -44,6 +45,7 @@ actual class AudioPlayer {
             override fun finished(mediaPlayer: MediaPlayer) {
                 playing.set(false)
                 paused.set(false)
+                onFinished?.invoke()
             }
 
             override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) {
@@ -55,9 +57,7 @@ actual class AudioPlayer {
             }
         })
 
-        // Громкость 0..100
         player.audio().setVolume((volume.get() * 100).toInt().coerceIn(0, 100))
-
         player.media().play(filePath)
     }
 
@@ -80,8 +80,6 @@ actual class AudioPlayer {
         playing.set(false)
         paused.set(false)
         currentPositionMs.set(0)
-        // duration оставляем, чтобы слайдер не сбрасывался резко
-        currentFilePath = null
     }
 
     actual fun isPlaying(): Boolean = playing.get() && !paused.get()
@@ -99,5 +97,9 @@ actual class AudioPlayer {
     actual fun seek(positionMs: Long) {
         mediaPlayer?.controls()?.setTime(positionMs.coerceAtLeast(0))
         currentPositionMs.set(positionMs.coerceAtLeast(0))
+    }
+
+    actual fun setOnFinished(listener: (() -> Unit)?) {
+        onFinished = listener
     }
 }

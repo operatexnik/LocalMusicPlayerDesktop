@@ -6,8 +6,9 @@ expect class AudioPlayer {
     fun isPlaying(): Boolean
     fun setVolume(volume: Float)
 
-    // новое
-    fun getCurrentPosition(): Long   // миллисекунды
-    fun getDuration(): Long          // миллисекунды
+    fun getCurrentPosition(): Long
+    fun getDuration(): Long
     fun seek(positionMs: Long)
+
+    fun setOnFinished(listener: (() -> Unit)?)
 }
