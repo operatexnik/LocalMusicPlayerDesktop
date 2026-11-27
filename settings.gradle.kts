@@ -15,6 +15,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MusicPlayerDesktop"
-include(":app")
+rootProject.name = "ZenMusicDesktop"
+
+// Старая экспериментальная KMP-заготовка больше не участвует в сборке.
+// Рабочее десктоп-приложение находится в модуле :desktopApp.
 include(":desktopApp")

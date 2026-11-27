@@ -1,5 +1,6 @@
 plugins {
-    id("org.jetbrains.kotlin.multiplatform") version "1.9.10" apply false
-    id("org.jetbrains.compose") version "1.5.10" apply false
-    id("com.android.application") version "8.2.0" apply false
+    kotlin("jvm") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21" apply false
+    id("org.jetbrains.compose") version "1.7.3" apply false
 }
